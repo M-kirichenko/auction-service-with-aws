@@ -1,0 +1,42 @@
+service: auction-service
+
+plugins:
+  - serverless-pseudo-parameters
+
+frameworkVersion: "3"
+
+provider:
+  name: aws
+  runtime: nodejs14.x
+  memorySize: 256
+  stage: ${opt:stage, 'dev'}
+  region: eu-central-1
+  environment:
+    AUCTIONS_TABLE_NAME: ${self:custom.AuctionsTable.name}
+  iamRoleStatements:
+    - ${file(iam/AuctionsTableIAM.yml):AuctionsTableIAM}
+
+resources:
+  Resources:
+    AuctionsTable: ${file(resources/AuctionsTable.yml):AuctionsTable}
+
+functions:
+  createAuction:
+    handler: src/handlers/auctions.createAuction
+    events:
+      - http:
+          method: POST
+          path: auction
+
+  getAuctions:
+    handler: src/handlers/auctions.getAuctions
+    events:
+      - http:
+          method: GET
+          path: auctions
+
+custom:
+  #reffers to DynamoDB table after it's created. Table name taken from resources
+  AuctionsTable:
+    name: !Ref AuctionsTable
+    arn: !GetAtt AuctionsTable.Arn
