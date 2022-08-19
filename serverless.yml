@@ -35,6 +35,13 @@ functions:
           method: GET
           path: auctions
 
+  getAuction:
+    handler: src/handlers/auctions.getAuction
+    events:
+      - http:
+          method: GET
+          path: auctions/{id}
+
 custom:
   #reffers to DynamoDB table after it's created. Table name taken from resources
   AuctionsTable:

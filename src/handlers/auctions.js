@@ -60,3 +60,34 @@ exports.getAuctions = async (event, context) => {
     body: JSON.stringify(auctions),
   };
 };
+
+exports.getAuction = async (event, context) => {
+  let auction;
+  const { id } = event.pathParameters;
+  try {
+    const result = await dynamodb
+      .get({
+        TableName: process.env.AUCTIONS_TABLE_NAME,
+        Key: { id },
+      })
+      .promise();
+    auction = result.Item;
+  } catch (err) {
+    return {
+      statusCode: 400,
+      body: JSON.stringify({ message: err.message }),
+    };
+  }
+
+  if (!auction) {
+    return {
+      statusCode: 404,
+      body: JSON.stringify({ message: "Auction not found" }),
+    };
+  }
+
+  return {
+    statusCode: 200,
+    body: JSON.stringify(auction),
+  };
+};
