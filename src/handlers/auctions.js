@@ -19,6 +19,9 @@ exports.createAuction = async (event, context) => {
     title,
     status: "OPEN",
     createdAt: now.toISOString(),
+    highestBid: {
+      amount: 0,
+    },
   };
 
   try {
@@ -41,13 +44,13 @@ exports.createAuction = async (event, context) => {
   };
 };
 
-exports.getAuctions = async (event, context) => {
+exports.getAuctions = async () => {
   let auctions;
   try {
-    const result = await dynamodb
+    const { Items } = await dynamodb
       .scan({ TableName: process.env.AUCTIONS_TABLE_NAME })
       .promise();
-    auctions = result.Items;
+    auctions = Items;
   } catch (err) {
     return {
       statusCode: 400,
@@ -65,13 +68,13 @@ exports.getAuction = async (event, context) => {
   let auction;
   const { id } = event.pathParameters;
   try {
-    const result = await dynamodb
+    const { Item } = await dynamodb
       .get({
         TableName: process.env.AUCTIONS_TABLE_NAME,
         Key: { id },
       })
       .promise();
-    auction = result.Item;
+    auction = Item;
   } catch (err) {
     return {
       statusCode: 400,
@@ -89,5 +92,44 @@ exports.getAuction = async (event, context) => {
   return {
     statusCode: 200,
     body: JSON.stringify(auction),
+  };
+};
+
+exports.placeBid = async (event, context) => {
+  const { id } = event.pathParameters;
+  const { amount } = JSON.parse(event.body);
+
+  let updatedAuction;
+
+  if (!amount || isNaN(amount)) {
+    return {
+      statusCode: 422,
+      body: JSON.stringify({ message: "No amount or ivalid amount passed" }),
+    };
+  }
+
+  const params = {
+    TableName: process.env.AUCTIONS_TABLE_NAME,
+    Key: { id },
+    UpdateExpression: "set highestBid.amount = :amount",
+    ExpressionAttributeValues: {
+      ":amount": amount,
+    },
+    ReturnValues: "ALL_NEW",
+  };
+
+  try {
+    const { Attributes } = await dynamodb.update(params).promise();
+    updatedAuction = Attributes;
+  } catch (err) {
+    return {
+      statusCode: 400,
+      body: JSON.stringify({ message: err.message }),
+    };
+  }
+
+  return {
+    statusCode: 200,
+    body: JSON.stringify(updatedAuction),
   };
 };
