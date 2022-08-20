@@ -3,7 +3,7 @@ const AWS = require("aws-sdk");
 
 const dynamodb = new AWS.DynamoDB.DocumentClient();
 
-exports.createAuction = async (event, context) => {
+module.exports.createAuction = async (event) => {
   const { title } = JSON.parse(event.body);
   const now = new Date();
 
@@ -44,7 +44,7 @@ exports.createAuction = async (event, context) => {
   };
 };
 
-exports.getAuctions = async () => {
+module.exports.getAuctions = async () => {
   let auctions;
   try {
     const { Items } = await dynamodb
@@ -64,7 +64,7 @@ exports.getAuctions = async () => {
   };
 };
 
-exports.getAuction = async (event, context) => {
+module.exports.getAuction = async (event) => {
   let auction;
   const { id } = event.pathParameters;
   try {
@@ -95,36 +95,56 @@ exports.getAuction = async (event, context) => {
   };
 };
 
-exports.placeBid = async (event, context) => {
+module.exports.placeBid = async (event) => {
+  let updatedAuction;
   const { id } = event.pathParameters;
   const { amount } = JSON.parse(event.body);
 
-  let updatedAuction;
+  const { body: existedAuction, statusCode: existedAuctionStatus } =
+    await this.getAuction(event);
 
-  if (!amount || isNaN(amount)) {
-    return {
-      statusCode: 422,
-      body: JSON.stringify({ message: "No amount or ivalid amount passed" }),
+  if (existedAuctionStatus === 200) {
+    const { highestBid } = JSON.parse(existedAuction);
+
+    if (amount <= highestBid.amount) {
+      return {
+        statusCode: 422,
+        body: JSON.stringify({
+          message: `Your bid must be higher than ${highestBid.amount}`,
+        }),
+      };
+    }
+
+    if (!amount || isNaN(amount)) {
+      return {
+        statusCode: 422,
+        body: JSON.stringify({ message: "No amount or ivalid amount passed" }),
+      };
+    }
+
+    const params = {
+      TableName: process.env.AUCTIONS_TABLE_NAME,
+      Key: { id },
+      UpdateExpression: "set highestBid.amount = :amount",
+      ExpressionAttributeValues: {
+        ":amount": amount,
+      },
+      ReturnValues: "ALL_NEW",
     };
-  }
 
-  const params = {
-    TableName: process.env.AUCTIONS_TABLE_NAME,
-    Key: { id },
-    UpdateExpression: "set highestBid.amount = :amount",
-    ExpressionAttributeValues: {
-      ":amount": amount,
-    },
-    ReturnValues: "ALL_NEW",
-  };
-
-  try {
-    const { Attributes } = await dynamodb.update(params).promise();
-    updatedAuction = Attributes;
-  } catch (err) {
+    try {
+      const { Attributes } = await dynamodb.update(params).promise();
+      updatedAuction = Attributes;
+    } catch (err) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ message: err.message }),
+      };
+    }
+  } else {
     return {
-      statusCode: 400,
-      body: JSON.stringify({ message: err.message }),
+      statusCode: existedAuctionStatus,
+      body: JSON.stringify({ message: "Auction doesn't exist" }),
     };
   }
 
