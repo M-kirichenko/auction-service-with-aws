@@ -47,12 +47,28 @@ module.exports.createAuction = async (event) => {
   };
 };
 
-module.exports.getAuctions = async () => {
+module.exports.getAuctions = async (event) => {
   let auctions;
+  let status = "OPEN";
+
+  if (event.queryStringParameters) {
+    status = event.queryStringParameters.status;
+  }
+
+  const params = {
+    TableName: process.env.AUCTIONS_TABLE_NAME,
+    IndexName: "statusAndEndDate",
+    KeyConditionExpression: "#status = :status",
+    ExpressionAttributeValues: {
+      ":status": status ? status : "OPEN"
+    },
+    ExpressionAttributeNames: {
+      "#status": "status"
+    }
+  };
+
   try {
-    const { Items } = await dynamodb
-      .scan({ TableName: process.env.AUCTIONS_TABLE_NAME })
-      .promise();
+    const { Items } = await dynamodb.query(params).promise();
     auctions = Items;
   } catch (err) {
     return {
