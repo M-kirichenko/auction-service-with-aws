@@ -6,11 +6,13 @@ const dynamodb = new AWS.DynamoDB.DocumentClient();
 module.exports.createAuction = async (event) => {
   const { title } = JSON.parse(event.body);
   const now = new Date();
+  const endDate = new Date();
+  endDate.setHours(now.getHours() + 1);
 
   if (!title) {
     return {
       statusCode: 422,
-      body: JSON.stringify({ message: "Title is required" }),
+      body: JSON.stringify({ message: "Title is required" })
     };
   }
 
@@ -19,28 +21,29 @@ module.exports.createAuction = async (event) => {
     title,
     status: "OPEN",
     createdAt: now.toISOString(),
+    endingAt: endDate.toISOString(),
     highestBid: {
-      amount: 0,
-    },
+      amount: 0
+    }
   };
 
   try {
     await dynamodb
       .put({
         TableName: process.env.AUCTIONS_TABLE_NAME,
-        Item: auction,
+        Item: auction
       })
       .promise();
   } catch (err) {
     return {
       statusCode: 400,
-      body: JSON.stringify({ message: err.message }),
+      body: JSON.stringify({ message: err.message })
     };
   }
 
   return {
     statusCode: 201,
-    body: JSON.stringify(auction),
+    body: JSON.stringify(auction)
   };
 };
 
@@ -54,13 +57,13 @@ module.exports.getAuctions = async () => {
   } catch (err) {
     return {
       statusCode: 400,
-      body: JSON.stringify({ message: err.message }),
+      body: JSON.stringify({ message: err.message })
     };
   }
 
   return {
     statusCode: 200,
-    body: JSON.stringify(auctions),
+    body: JSON.stringify(auctions)
   };
 };
 
@@ -71,27 +74,27 @@ module.exports.getAuction = async (event) => {
     const { Item } = await dynamodb
       .get({
         TableName: process.env.AUCTIONS_TABLE_NAME,
-        Key: { id },
+        Key: { id }
       })
       .promise();
     auction = Item;
   } catch (err) {
     return {
       statusCode: 400,
-      body: JSON.stringify({ message: err.message }),
+      body: JSON.stringify({ message: err.message })
     };
   }
 
   if (!auction) {
     return {
       statusCode: 404,
-      body: JSON.stringify({ message: "Auction not found" }),
+      body: JSON.stringify({ message: "Auction not found" })
     };
   }
 
   return {
     statusCode: 200,
-    body: JSON.stringify(auction),
+    body: JSON.stringify(auction)
   };
 };
 
@@ -104,21 +107,31 @@ module.exports.placeBid = async (event) => {
     await this.getAuction(event);
 
   if (existedAuctionStatus === 200) {
-    const { highestBid } = JSON.parse(existedAuction);
+    const { highestBid, status: existedAuctionStatus } =
+      JSON.parse(existedAuction);
 
     if (amount <= highestBid.amount) {
       return {
         statusCode: 422,
         body: JSON.stringify({
-          message: `Your bid must be higher than ${highestBid.amount}`,
-        }),
+          message: `Your bid must be higher than ${highestBid.amount}`
+        })
+      };
+    }
+
+    if (existedAuctionStatus === "CLOSED") {
+      return {
+        statusCode: 422,
+        body: JSON.stringify({
+          message: "You can't bid on closed auction"
+        })
       };
     }
 
     if (!amount || isNaN(amount)) {
       return {
         statusCode: 422,
-        body: JSON.stringify({ message: "No amount or ivalid amount passed" }),
+        body: JSON.stringify({ message: "No amount or ivalid amount passed" })
       };
     }
 
@@ -127,9 +140,9 @@ module.exports.placeBid = async (event) => {
       Key: { id },
       UpdateExpression: "set highestBid.amount = :amount",
       ExpressionAttributeValues: {
-        ":amount": amount,
+        ":amount": amount
       },
-      ReturnValues: "ALL_NEW",
+      ReturnValues: "ALL_NEW"
     };
 
     try {
@@ -138,18 +151,18 @@ module.exports.placeBid = async (event) => {
     } catch (err) {
       return {
         statusCode: 400,
-        body: JSON.stringify({ message: err.message }),
+        body: JSON.stringify({ message: err.message })
       };
     }
   } else {
     return {
       statusCode: existedAuctionStatus,
-      body: JSON.stringify({ message: "Auction doesn't exist" }),
+      body: JSON.stringify({ message: "Auction doesn't exist" })
     };
   }
 
   return {
     statusCode: 200,
-    body: JSON.stringify(updatedAuction),
+    body: JSON.stringify(updatedAuction)
   };
 };
