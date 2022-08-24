@@ -1,6 +1,7 @@
+const createError = require("http-errors");
 const {
   getEndedAuctions,
-  closeAuction
+  closeAuction,
 } = require("../lib/auctionProcessTriggers");
 
 module.exports.handler = async () => {
@@ -12,9 +13,6 @@ module.exports.handler = async () => {
     await Promise.all(closePromises);
     return { closed: closePromises.length };
   } catch (err) {
-    return {
-      statusCode: 400,
-      body: JSON.stringify(err.message)
-    };
+    throw new createError(400, JSON.stringify({ message: err.message }));
   }
 };

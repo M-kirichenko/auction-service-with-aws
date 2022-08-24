@@ -1,20 +1,21 @@
 const uuid = require("uuid");
 const AWS = require("aws-sdk");
+const createError = require("http-errors");
+const commonMiddleware = require("../lib/commonMiddleware");
 
 const dynamodb = new AWS.DynamoDB.DocumentClient();
 
-module.exports.createAuction = async (event) => {
-  const { title } = JSON.parse(event.body);
+const createAuction = async (event) => {
+  const { title } = event.body;
   const now = new Date();
   const endDate = new Date();
   endDate.setHours(now.getHours() + 1);
 
-  if (!title) {
-    return {
-      statusCode: 422,
-      body: JSON.stringify({ message: "Title is required" })
-    };
-  }
+  if (!title)
+    throw new createError(
+      422,
+      JSON.stringify({ message: "Title is required" })
+    );
 
   const auction = {
     id: uuid.v4(),
@@ -23,31 +24,28 @@ module.exports.createAuction = async (event) => {
     createdAt: now.toISOString(),
     endingAt: endDate.toISOString(),
     highestBid: {
-      amount: 0
-    }
+      amount: 0,
+    },
   };
 
   try {
     await dynamodb
       .put({
         TableName: process.env.AUCTIONS_TABLE_NAME,
-        Item: auction
+        Item: auction,
       })
       .promise();
   } catch (err) {
-    return {
-      statusCode: 400,
-      body: JSON.stringify({ message: err.message })
-    };
+    throw new createError(400, JSON.stringify({ message: err.message }));
   }
 
   return {
     statusCode: 201,
-    body: JSON.stringify(auction)
+    body: JSON.stringify(auction),
   };
 };
 
-module.exports.getAuctions = async (event) => {
+const getAuctions = async (event) => {
   let auctions;
   let status = "OPEN";
 
@@ -60,95 +58,86 @@ module.exports.getAuctions = async (event) => {
     IndexName: "statusAndEndDate",
     KeyConditionExpression: "#status = :status",
     ExpressionAttributeValues: {
-      ":status": status ? status : "OPEN"
+      ":status": status ? status : "OPEN",
     },
     ExpressionAttributeNames: {
-      "#status": "status"
-    }
+      "#status": "status",
+    },
   };
 
   try {
     const { Items } = await dynamodb.query(params).promise();
     auctions = Items;
   } catch (err) {
-    return {
-      statusCode: 400,
-      body: JSON.stringify({ message: err.message })
-    };
+    throw new createError(400, JSON.stringify({ message: err.message }));
   }
 
   return {
     statusCode: 200,
-    body: JSON.stringify(auctions)
+    body: JSON.stringify(auctions),
   };
 };
 
-module.exports.getAuction = async (event) => {
+const getAuction = async (event) => {
   let auction;
   const { id } = event.pathParameters;
   try {
     const { Item } = await dynamodb
       .get({
         TableName: process.env.AUCTIONS_TABLE_NAME,
-        Key: { id }
+        Key: { id },
       })
       .promise();
     auction = Item;
   } catch (err) {
-    return {
-      statusCode: 400,
-      body: JSON.stringify({ message: err.message })
-    };
+    throw new createError(400, JSON.stringify({ message: err.message }));
   }
 
-  if (!auction) {
-    return {
-      statusCode: 404,
-      body: JSON.stringify({ message: "Auction not found" })
-    };
-  }
+  if (!auction)
+    throw new createError.NotFound(
+      JSON.stringify({ message: "Auction's not found" })
+    );
 
   return {
     statusCode: 200,
-    body: JSON.stringify(auction)
+    body: JSON.stringify(auction),
   };
 };
 
-module.exports.placeBid = async (event) => {
+const placeBid = async (event) => {
   let updatedAuction;
   const { id } = event.pathParameters;
-  const { amount } = JSON.parse(event.body);
+  const { amount } = event.body;
+  let existedAuction;
+  try {
+    existedAuction = await getAuction(event);
+  } catch (err) {
+    throw new createError(400, JSON.stringify({ message: err.message }));
+  }
 
-  const { body: existedAuction, statusCode: existedAuctionStatus } =
-    await this.getAuction(event);
-
-  if (existedAuctionStatus === 200) {
-    const { highestBid, status: existedAuctionStatus } =
-      JSON.parse(existedAuction);
+  if (existedAuction.statusCode === 200) {
+    const { highestBid, status: existedAuctionStatus } = JSON.parse(
+      existedAuction.body
+    );
 
     if (amount <= highestBid.amount) {
-      return {
-        statusCode: 422,
-        body: JSON.stringify({
-          message: `Your bid must be higher than ${highestBid.amount}`
+      throw new createError(
+        422,
+        JSON.stringify({
+          message: `Your bid must be higher than ${highestBid.amount}`,
         })
-      };
+      );
     }
 
     if (existedAuctionStatus === "CLOSED") {
-      return {
-        statusCode: 422,
-        body: JSON.stringify({
-          message: "You can't bid on closed auction"
-        })
-      };
+      throw new createError(
+        422,
+        JSON.stringify({ message: "You can't bid on closed auction" })
+      );
     }
 
     if (!amount || isNaN(amount)) {
-      return {
-        statusCode: 422,
-        body: JSON.stringify({ message: "No amount or ivalid amount passed" })
-      };
+      throw new createError(422, "No amount or ivalid amount passed");
     }
 
     const params = {
@@ -156,29 +145,32 @@ module.exports.placeBid = async (event) => {
       Key: { id },
       UpdateExpression: "set highestBid.amount = :amount",
       ExpressionAttributeValues: {
-        ":amount": amount
+        ":amount": amount,
       },
-      ReturnValues: "ALL_NEW"
+      ReturnValues: "ALL_NEW",
     };
 
     try {
       const { Attributes } = await dynamodb.update(params).promise();
       updatedAuction = Attributes;
     } catch (err) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({ message: err.message })
-      };
+      throw new createError(400, JSON.stringify({ message: err.message }));
     }
   } else {
-    return {
-      statusCode: existedAuctionStatus,
-      body: JSON.stringify({ message: "Auction doesn't exist" })
-    };
+    throw new createError.NotFound(
+      JSON.stringify({ message: "Auction's not found" })
+    );
   }
 
   return {
     statusCode: 200,
-    body: JSON.stringify(updatedAuction)
+    body: JSON.stringify(updatedAuction),
   };
+};
+
+module.exports = {
+  getAuctions: commonMiddleware(getAuctions),
+  createAuction: commonMiddleware(createAuction),
+  getAuction: commonMiddleware(getAuction),
+  placeBid: commonMiddleware(placeBid),
 };

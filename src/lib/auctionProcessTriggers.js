@@ -9,11 +9,11 @@ exports.getEndedAuctions = async () => {
     KeyConditionExpression: "#status = :status AND endingAt <= :now",
     ExpressionAttributeValues: {
       ":status": "OPEN",
-      ":now": now.toISOString()
+      ":now": now.toISOString(),
     },
     ExpressionAttributeNames: {
-      "#status": "status"
-    }
+      "#status": "status",
+    },
   };
 
   const { Items: auctionsToClose } = await dynamodb.query(params).promise();
@@ -26,11 +26,11 @@ exports.closeAuction = async (auction) => {
     Key: { id: auction.id },
     UpdateExpression: "set #status = :status",
     ExpressionAttributeValues: {
-      ":status": "CLOSED"
+      ":status": "CLOSED",
     },
     ExpressionAttributeNames: {
-      "#status": "status"
-    }
+      "#status": "status",
+    },
   };
   const result = await dynamodb.update(params).promise();
   return result;
